@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/mrnaghibi/discount/entity"
 	router "github.com/mrnaghibi/discount/http"
+	"github.com/pusher/pusher-http-go"
 	"net/http"
 
 	"github.com/mrnaghibi/discount/errors"
@@ -48,6 +49,7 @@ func (discountController *DiscountController) ConsumeDiscount(response http.Resp
 				json.NewEncoder(response).Encode(errors.ServiecError{Message: "Wallet Charged Successfully"})
 				//Send Statistics to Pusher
 				statistic := discountController.service.ReportArvanCoupon()
+				go push(statistic.Count)
 
 			}
 
@@ -77,4 +79,17 @@ func makeDecrease(model entity.DiscountRequestModel, discountController *Discoun
 	} else {
 		duplicateCH <- struct{}{}
 	}
+}
+
+func push(statistic int){
+	pusherClient := pusher.Client{
+		AppID: "950186",
+		Key: "c5e1c81d517598847450",
+		Secret: "0f86ee4c94b47fd6dadb",
+		Cluster: "us2",
+		Secure: true,
+	}
+
+	data := map[string]int{"statistic": statistic}
+	pusherClient.Trigger("my-channel", "my-event", data)
 }

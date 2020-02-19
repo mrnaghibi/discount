@@ -28,3 +28,7 @@ func (*muxRouter) SERVE(port string){
 	log.Println("Mux - Server Up And Running On Port: ",port)
 	log.Fatal(http.ListenAndServe(port,muxDispatcher))
 }
+
+func (*muxRouter) HTML(directory string){
+	muxDispatcher.PathPrefix("/").Handler(http.FileServer(http.Dir("./static/")))
+}

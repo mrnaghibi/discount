@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 )
 
 type SendHttpRequest struct {
@@ -15,7 +16,7 @@ func SendHttpRequestProvider() SendHttpRequest {
 }
 
 func (s *SendHttpRequest) Send(mobile string) error {
-	url := "http://localhost:2020/api/charge"
+	url := os.Getenv("BASEURL")+"/api/charge"
 	var jsonStr = map[string]string{"Mobile": mobile}
 	marshalData, _ := json.Marshal(jsonStr)
 	_, err := http.Post(url, "application/json",bytes.NewBuffer(marshalData))
