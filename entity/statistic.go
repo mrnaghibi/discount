@@ -1,7 +1,6 @@
 package entity
 
-type Statistic struct{
-	ID int64 `json:"id"`
-	Mobile string `json:"mobile"`
-	Discount Discount `json:"discount"`
+type Statistic struct {
+	Mobile []string
+	Count  int
 }

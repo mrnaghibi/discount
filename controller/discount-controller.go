@@ -1,114 +1,80 @@
 package controller
 
 import (
+	"encoding/json"
+	"github.com/mrnaghibi/discount/entity"
+	router "github.com/mrnaghibi/discount/http"
 	"net/http"
 
-	"encoding/json"
-
-	"github.com/mrnaghibi/discount/entity"
 	"github.com/mrnaghibi/discount/errors"
 	"github.com/mrnaghibi/discount/service"
 )
 
-type DiscountController interface {
-	SaveDiscount(response http.ResponseWriter, request *http.Request)
-	GetDiscount(response http.ResponseWriter, request *http.Request)
-	ConsumeDiscount(response http.ResponseWriter, request *http.Request)
-	ReportDiscount(response http.ResponseWriter, request *http.Request)
+
+
+type DiscountController struct {
+	service service.DiscountService
 }
-type Body struct {
-	Mobile   string `json:"mobile"`
-	Discount string `json:"discount"`
+
+func DiscountControllerProvider(DiscountService service.DiscountService) DiscountController {
+	return DiscountController{service: DiscountService}
 }
 
 var (
-	discountService service.DiscountService
+	walletCharger  router.SendHttpRequest
+	discountCH  = make(chan string, 1000)
+	duplicateCH = make(chan struct{})
+	doneCH      = make(chan struct{})
 )
 
-type controller struct{}
-
-func NewDiscountController(discountSRV service.DiscountService) DiscountController {
-	discountService = discountSRV
-	return &controller{}
-}
-
-func (*controller) SaveDiscount(response http.ResponseWriter, request *http.Request) {
-	response.Header().Set("Content-Type", "application/json")
-	var discount entity.Discount
-	err := json.NewDecoder(request.Body).Decode(&discount)
+func (discountController *DiscountController) ConsumeDiscount(response http.ResponseWriter, request *http.Request) {
+	var requestModel entity.DiscountRequestModel
+	err := json.NewDecoder(request.Body).Decode(&requestModel)
 	if err != nil {
-		response.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(response).Encode(errors.ServiecError{Message: err.Error()})
-		return
-	}
-	result, err1 := discountService.Create(&discount)
-
-	if err1 != nil {
-		response.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(response).Encode(errors.ServiecError{Message: err1.Error()})
-		return
-	}
-	response.WriteHeader(http.StatusOK)
-	json.NewEncoder(response).Encode(result)
-}
-func (*controller) ConsumeDiscount(response http.ResponseWriter, request *http.Request) {
-	response.Header().Set("Content-Type", "application/json")
-	var body Body
-	err := json.NewDecoder(request.Body).Decode(&body)
-	if err != nil {
-		response.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(response).Encode(errors.ServiecError{Message: "Unmarshalling Data"})
-		return
-	}
-	result, err1 := discountService.Consume(body.Discount, body.Mobile)
-	if err1 != nil {
 		response.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(response).Encode(errors.ServiecError{Message: err1.Error()})
+		json.NewEncoder(response).Encode(errors.ServiecError{Message: "Bad Request!"})
 		return
 	}
-	response.WriteHeader(http.StatusOK)
-	json.NewEncoder(response).Encode(result)
+	go makeDecrease(requestModel, discountController)
+	select {
+		case mobile := <-discountCH:
 
+			err := walletCharger.Send(mobile)
+			if err != nil {
+				response.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(response).Encode(errors.ServiecError{Message: "something went wrong!"})
+			} else {
+				response.WriteHeader(http.StatusOK)
+				json.NewEncoder(response).Encode(errors.ServiecError{Message: "Wallet Charged Successfully"})
+				//Send Statistics to Pusher
+				statistic := discountController.service.ReportArvanCoupon()
+
+			}
+
+		case _ = <-doneCH:
+			response.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(response).Encode(errors.ServiecError{Message: "Coupon not allowed!"})
+		case _ = <-duplicateCH:
+			response.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(response).Encode(errors.ServiecError{Message: "Coupon Used Before!"})
+	}
 }
-func (*controller) ReportDiscount(response http.ResponseWriter, request *http.Request) {
-	response.Header().Set("Content-Type", "application/json")
-	params, ok := request.URL.Query()["discount"]
-	if !ok || len(params[0]) < 1 {
-		response.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(response).Encode(errors.ServiecError{Message: "discount param required"})
-		return
-	}
 
-	statistics, err := discountService.Report(params[0])
-	if err != nil {
-		response.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(response).Encode(errors.ServiecError{Message: err.Error()})
-		return
-	}
-	if len(statistics) == 0 {
-		response.WriteHeader(http.StatusOK)
-		response.Write([]byte("[]"))
+func (discountController *DiscountController) ReportDiscount(response http.ResponseWriter, request *http.Request) {
+	statistic := discountController.service.ReportArvanCoupon()
+	response.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(response).Encode(statistic)
+}
+
+func makeDecrease(model entity.DiscountRequestModel, discountController *DiscountController) {
+	result, err := discountController.service.DecreaseDiscountNum(model.Mobile)
+	if err == nil {
+		if result {
+			discountCH <- model.Mobile
+		} else {
+			doneCH <- struct{}{}
+		}
 	} else {
-		response.WriteHeader(http.StatusOK)
-		json.NewEncoder(response).Encode(statistics)
+		duplicateCH <- struct{}{}
 	}
-
-}
-
-func (*controller) GetDiscount(response http.ResponseWriter, request *http.Request) {
-	response.Header().Set("Content-Type", "application/json")
-	params, ok := request.URL.Query()["discount"]
-	if !ok || len(params[0]) < 1 {
-		response.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(response).Encode(errors.ServiecError{Message: "discount param required"})
-		return
-	}
-	result, err := discountService.GetDiscount(params[0])
-	if err != nil {
-		response.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(response).Encode(errors.ServiecError{Message: err.Error()})
-		return
-	}
-	response.WriteHeader(http.StatusOK)
-	json.NewEncoder(response).Encode(result)
 }

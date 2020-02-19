@@ -1,29 +1,18 @@
 package main
 
-import (
-	"os"
-	"github.com/mrnaghibi/discount/controller"
-	router "github.com/mrnaghibi/discount/http"
-	"github.com/mrnaghibi/discount/repository"
-	"github.com/mrnaghibi/discount/service"
-)
+import router "github.com/mrnaghibi/discount/http"
 
-var (
-	discountRepository repository.Discount           = repository.NewSliceRepository()
-	discountService    service.DiscountService       = service.NewDiscountService(discountRepository)
-	discountController controller.DiscountController = controller.NewDiscountController(discountService)
-	httpRouter         router.Router                 = router.NewMuxRouter()
-)
+
+var httpRouter = router.NewMuxRouter()
 
 func handleRequest() {
-	
-	httpRouter.POST("/api/discounts", discountController.SaveDiscount)
-	httpRouter.GET("/api/discounts", discountController.GetDiscount)
+	discountController := initWalletController()
 	httpRouter.POST("/api/discounts/consume",discountController.ConsumeDiscount)
 	httpRouter.GET("/api/discounts/statistics",discountController.ReportDiscount)
-	httpRouter.SERVE(os.Getenv("PORT"))
-}
+	//httpRouter.SERVE(os.Getenv("PORT"))
+	httpRouter.SERVE(":8000")
 
+}
 func main() {
 	handleRequest()
 }
